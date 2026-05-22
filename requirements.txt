@@ -1,14 +1,11 @@
 streamlit==1.28.1
 pandas==2.0.3
 numpy==1.24.3
-openai==1.3.0
+openai==0.28.1
 python-dotenv==1.0.0
-sqlalchemy==2.0.23
 plotly==5.17.0
 Pillow==10.0.0
-requests==2.31.0
-python-dateutil==2.8.2
-langchain==0.0.340          # For embeddings & chains
-faiss-cpu==1.7.4             # Vector search
-speech-recognition==3.10.1   # Audio transcription
-pydub==0.25.1                # Audio processing
+langchain==0.0.340
+faiss-cpu==1.7.4
+SpeechRecognition==3.10.1
+pydub==0.25.1
