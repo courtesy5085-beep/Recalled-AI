@@ -25,7 +25,7 @@ from langchain.text_splitter import CharacterTextSplitter
 
 # Load environment variables (API keys here, no .toml)
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = os.getenv("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")
 
 # If you don't have OpenAI key, the app falls back to rule‑based mode
 USE_OPENAI = bool(openai.api_key)
