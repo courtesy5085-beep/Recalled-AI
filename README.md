@@ -1,28 +1,39 @@
-# Recalled-AI
-# 🧠 Recalled - Your AI Memory Companion
+# 🧠 Recalled AI
+
+Production-grade AI memory assistant built with Streamlit.
 
 ## Features
-- 📝 Save memories with AI-generated summaries
-- 🔄 Smart recall system for forgotten memories
-- 🏷️ Automatic tagging and emotion detection
-- 📊 Analytics dashboard with visualizations
-- 🔍 Advanced search with filters
-- 🎨 Beautiful, responsive UI with dark mode
 
-## Deployment on Streamlit Cloud
+- Semantic memory search
+- AI summaries/tags/emotions
+- Audio transcription
+- Image captioning
+- RAG chat over memories
+- Weekly insights
+- Export/import
+- Timeline UI
 
-1. Push this code to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Click "New app"
-4. Select your repository and branch
-5. Set main file path to `app.py`
-6. Click "Deploy"
+## Setup
 
-## Local Development
+### 1. Clone
 
-```bash
-# Install dependencies
+git clone <repo>
+
+### 2. Install
+
 pip install -r requirements.txt
 
-# Run the app
+### 3. Add .env
+
+OPENAI_API_KEY=your_key
+
+### 4. Run
+
 streamlit run app.py
+
+## Streamlit Cloud Notes
+
+- Uses ChromaDB instead of FAISS
+- No C++ FAISS dependency
+- SQLite + DuckDB compatible
+- Graceful fallback if ffmpeg missing
