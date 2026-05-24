@@ -20,7 +20,7 @@ client = OpenAI(
     api_key=os.getenv("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")
 )
 
-USE_OPENAI = bool(os.getenv("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"))
+
 
 # =========================
 # PAGE CONFIG
@@ -58,10 +58,8 @@ st.markdown("""
 }
 </style>
 
-
 # =========================# DATABASE
-# =========================
-def init_db():
+# =========================def init_db():
     conn = sqlite3.connect("recalled.db")
     c = conn.cursor()
 
