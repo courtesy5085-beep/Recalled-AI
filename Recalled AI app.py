@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from PIL import Image
 import io
-from dotenv import load_dotenv
+
 from openai import OpenAI
 
 # =========================
@@ -57,10 +57,9 @@ st.markdown("""
     margin-bottom:25px;
 }
 </style>
-""", unsafe_allow_html=True)
 
-# =========================
-# DATABASE
+
+# =========================# DATABASE
 # =========================
 def init_db():
     conn = sqlite3.connect("recalled.db")
