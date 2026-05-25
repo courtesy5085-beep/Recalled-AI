@@ -27,12 +27,12 @@ from langchain_text_splitters import (
 )
 
 # ====================================
-# ENV
+# LOAD ENV
 # ====================================
 
 load_dotenv()
 
-OPENAI_KEY = os.getenv("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")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 
 USE_OPENAI = OPENAI_KEY is not None
 
@@ -49,13 +49,54 @@ st.set_page_config(
 )
 
 # ====================================
+# CUSTOM CSS
+# ====================================
+
+st.markdown("""
+<style>
+
+.main {
+    background-color: #0e1117;
+    color: white;
+}
+
+.stButton>button {
+    border-radius: 12px;
+    background: linear-gradient(90deg,#7F5AF0,#2CB67D);
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    font-weight: bold;
+}
+
+.stTextInput>div>div>input {
+    border-radius: 10px;
+}
+
+.memory-card {
+    padding: 20px;
+    border-radius: 15px;
+    background: #161b22;
+    margin-bottom: 15px;
+    border: 1px solid #30363d;
+}
+
+.metric-card {
+    background: #161b22;
+    padding: 15px;
+    border-radius: 15px;
+    text-align: center;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# ====================================
 # DATABASE
 # ====================================
 
-DB_PATH = "recalled.db"
-
 conn = sqlite3.connect(
-    DB_PATH,
+    "recalled.db",
     check_same_thread=False
 )
 
@@ -160,7 +201,7 @@ def generate_ai_metadata(text):
 
     fallback = {
         "title": text[:40],
-        "summary": text[:120],
+        "summary": text[:100],
         "emotion": "neutral",
         "tags": ["memory"]
     }
@@ -176,7 +217,7 @@ def generate_ai_metadata(text):
                 {
                     "role": "user",
                     "content": f"""
-Analyze this memory and return JSON:
+Analyze this memory and return JSON.
 
 {{
 "title":"",
@@ -197,62 +238,50 @@ Memory:
             response.choices[0].message.content
         )
 
-    except Exception as e:
-
-        st.warning(f"Metadata generation failed: {e}")
+    except Exception:
 
         return fallback
 
 # ====================================
-# MEMORY SAVE
+# SAVE MEMORY
 # ====================================
 
-def save_memory(
-    user_id,
-    text,
-    memory_type="note",
-    source_type="text"
-):
+def save_memory(user_id, text, memory_type="Note"):
 
     metadata = generate_ai_metadata(text)
 
-    title = metadata.get("title", "Untitled")
-    summary = metadata.get("summary", "")
-    emotion = metadata.get("emotion", "neutral")
+    title = metadata["title"]
+    summary = metadata["summary"]
+    emotion = metadata["emotion"]
 
-    tags = ",".join(
-        metadata.get("tags", [])
-    )
+    tags = ",".join(metadata["tags"])
 
     created_at = datetime.utcnow().isoformat()
 
-    cur.execute(
-        """
-        INSERT INTO memories(
-            user_id,
-            title,
-            content,
-            summary,
-            emotion,
-            tags,
-            memory_type,
-            source_type,
-            created_at
-        )
-        VALUES(?,?,?,?,?,?,?,?,?)
-        """,
-        (
-            user_id,
-            title,
-            text,
-            summary,
-            emotion,
-            tags,
-            memory_type,
-            source_type,
-            created_at
-        )
+    cur.execute("""
+    INSERT INTO memories(
+        user_id,
+        title,
+        content,
+        summary,
+        emotion,
+        tags,
+        memory_type,
+        source_type,
+        created_at
     )
+    VALUES(?,?,?,?,?,?,?,?,?)
+    """, (
+        user_id,
+        title,
+        text,
+        summary,
+        emotion,
+        tags,
+        memory_type,
+        "text",
+        created_at
+    ))
 
     conn.commit()
 
@@ -268,15 +297,13 @@ def save_memory(
             ids=[f"{memory_id}_{i}"],
             documents=[chunk],
             embeddings=[embedding],
-            metadatas=[
-                {
-                    "user_id": str(user_id),
-                    "memory_id": str(memory_id),
-                    "title": title,
-                    "emotion": emotion,
-                    "tags": tags
-                }
-            ]
+            metadatas=[{
+                "user_id": str(user_id),
+                "memory_id": str(memory_id),
+                "title": title,
+                "emotion": emotion,
+                "tags": tags
+            }]
         )
 
 # ====================================
@@ -285,62 +312,54 @@ def save_memory(
 
 def hybrid_search(query, user_id, top_k=10):
 
-    try:
+    query_embedding = get_embedding(query)
 
-        query_embedding = get_embedding(query)
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_k
+    )
 
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k
-        )
+    docs = results["documents"][0]
+    metas = results["metadatas"][0]
 
-        docs = results["documents"][0]
+    filtered_docs = []
 
-        metadatas = results["metadatas"][0]
+    for doc, meta in zip(docs, metas):
 
-        filtered_docs = []
+        if meta["user_id"] == str(user_id):
 
-        for doc, meta in zip(docs, metadatas):
+            filtered_docs.append(doc)
 
-            if meta.get("user_id") == str(user_id):
-                filtered_docs.append(doc)
-
-        if not filtered_docs:
-            return []
-
-        tokenized_docs = [
-            d.split()
-            for d in filtered_docs
-        ]
-
-        bm25 = BM25Okapi(tokenized_docs)
-
-        bm25_scores = bm25.get_scores(
-            query.split()
-        )
-
-        rerank_inputs = [
-            (query, doc)
-            for doc in filtered_docs
-        ]
-
-        rerank_scores = reranker.predict(
-            rerank_inputs
-        )
-
-        ranked = sorted(
-            zip(filtered_docs, rerank_scores),
-            key=lambda x: x[1],
-            reverse=True
-        )
-
-        return ranked
-
-    except Exception as e:
-
-        st.error(f"Search failed: {e}")
-
+    if not filtered_docs:
         return []
+
+    tokenized_docs = [
+        d.split()
+        for d in filtered_docs
+    ]
+
+    bm25 = BM25Okapi(tokenized_docs)
+
+    bm25_scores = bm25.get_scores(
+        query.split()
+    )
+
+    rerank_inputs = [
+        (query, doc)
+        for doc in filtered_docs
+    ]
+
+    rerank_scores = reranker.predict(
+        rerank_inputs
+    )
+
+    ranked = sorted(
+        zip(filtered_docs, rerank_scores),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    return ranked
 
 # ====================================
 # AUTH
@@ -350,45 +369,39 @@ def register_user(username, password, email):
 
     try:
 
-        cur.execute(
-            """
-            INSERT INTO users(
-                username,
-                password,
-                email,
-                created_at
-            )
-            VALUES(?,?,?,?)
-            """,
-            (
-                username,
-                hash_password(password),
-                email,
-                datetime.utcnow().isoformat()
-            )
+        cur.execute("""
+        INSERT INTO users(
+            username,
+            password,
+            email,
+            created_at
         )
+        VALUES(?,?,?,?)
+        """, (
+            username,
+            hash_password(password),
+            email,
+            datetime.utcnow().isoformat()
+        ))
 
         conn.commit()
 
         return True
 
-    except Exception:
+    except:
         return False
 
 def login_user(username, password):
 
-    cur.execute(
-        """
-        SELECT id
-        FROM users
-        WHERE username=?
-        AND password=?
-        """,
-        (
-            username,
-            hash_password(password)
-        )
-    )
+    cur.execute("""
+    SELECT id
+    FROM users
+    WHERE username=?
+    AND password=?
+    """, (
+        username,
+        hash_password(password)
+    ))
 
     user = cur.fetchone()
 
@@ -410,17 +423,13 @@ def login_page():
 
     st.title("🧠 Recalled AI")
 
-    tab1, tab2 = st.tabs([
-        "Login",
-        "Register"
-    ])
+    tab1, tab2 = st.tabs(["Login", "Register"])
 
     with tab1:
 
-        with st.form("login_form"):
+        with st.form("login"):
 
             username = st.text_input("Username")
-
             password = st.text_input(
                 "Password",
                 type="password"
@@ -432,8 +441,7 @@ def login_page():
 
                 if login_user(username, password):
 
-                    st.success("Logged in")
-
+                    st.success("Login successful")
                     st.rerun()
 
                 else:
@@ -442,12 +450,10 @@ def login_page():
 
     with tab2:
 
-        with st.form("register_form"):
+        with st.form("register"):
 
             username = st.text_input("New Username")
-
             email = st.text_input("Email")
-
             password = st.text_input(
                 "New Password",
                 type="password"
@@ -457,11 +463,13 @@ def login_page():
 
             if submit:
 
-                if register_user(
+                success = register_user(
                     username,
                     password,
                     email
-                ):
+                )
+
+                if success:
 
                     st.success("Registration successful")
 
@@ -480,16 +488,16 @@ def main_app():
     page = st.sidebar.radio(
         "Navigation",
         [
-            "🏠 Home",
-            "➕ Add Memory",
-            "🔍 Search",
-            "📊 Insights",
-            "⚙️ Settings"
+            "Home",
+            "Add Memory",
+            "Search",
+            "Insights",
+            "Settings"
         ]
     )
 
-    st.sidebar.write(
-        f"Logged in as: {st.session_state.username}"
+    st.sidebar.success(
+        f"Logged in as {st.session_state.username}"
     )
 
     if st.sidebar.button("Logout"):
@@ -499,56 +507,50 @@ def main_app():
 
     # HOME
 
-    if page == "🏠 Home":
+    if page == "Home":
 
-        st.title("🏠 Memory Timeline")
+        st.title("🧠 Your Memories")
 
-        df = pd.read_sql_query(
-            """
-            SELECT *
-            FROM memories
-            WHERE user_id=?
-            ORDER BY created_at DESC
-            """,
-            conn,
-            params=(st.session_state.user_id,)
-        )
+        df = pd.read_sql_query("""
+        SELECT *
+        FROM memories
+        WHERE user_id=?
+        ORDER BY created_at DESC
+        """, conn, params=(st.session_state.user_id,))
 
         if df.empty:
 
-            st.info("No memories yet")
+            st.info("No memories saved")
 
         else:
 
             for _, row in df.iterrows():
 
-                st.subheader(row["title"])
-
-                st.write(row["summary"])
-
-                st.caption(
-                    f"Emotion: {row['emotion']} | Tags: {row['tags']}"
-                )
-
-                st.markdown("---")
+                st.markdown(f"""
+                <div class="memory-card">
+                    <h3>{row['title']}</h3>
+                    <p>{row['summary']}</p>
+                    <small>
+                    Emotion: {row['emotion']} |
+                    Tags: {row['tags']}
+                    </small>
+                </div>
+                """, unsafe_allow_html=True)
 
     # ADD MEMORY
 
-    elif page == "➕ Add Memory":
+    elif page == "Add Memory":
 
         st.title("➕ Add Memory")
 
         memory_type = st.selectbox(
-            "Memory Type",
-            [
-                "Note",
-                "Journal",
-                "Idea",
-                "Quote"
-            ]
+            "Type",
+            ["Note", "Journal", "Idea"]
         )
 
-        text = st.text_area("Write memory")
+        text = st.text_area(
+            "Write your memory"
+        )
 
         uploaded_image = st.file_uploader(
             "Upload Image",
@@ -557,27 +559,25 @@ def main_app():
 
         if st.button("Save Memory"):
 
-            combined_text = text
-
             if uploaded_image:
 
                 image = Image.open(uploaded_image)
 
                 st.image(image, width=250)
 
-                combined_text += "\nImage uploaded."
+                text += "\nImage uploaded."
 
-            if combined_text.strip() == "":
+            if text.strip() == "":
 
-                st.warning("Please enter memory")
+                st.warning("Please write something")
 
             else:
 
-                with st.spinner("Saving memory..."):
+                with st.spinner("Saving..."):
 
                     save_memory(
                         st.session_state.user_id,
-                        combined_text,
+                        text,
                         memory_type
                     )
 
@@ -585,11 +585,13 @@ def main_app():
 
     # SEARCH
 
-    elif page == "🔍 Search":
+    elif page == "Search":
 
-        st.title("🔍 Search Memories")
+        st.title("🔍 Smart Search")
 
-        query = st.text_input("Search")
+        query = st.text_input(
+            "Search memories"
+        )
 
         if query:
 
@@ -600,87 +602,96 @@ def main_app():
 
             if not results:
 
-                st.warning("No results found")
+                st.warning("No results")
 
-            for doc, score in results:
+            else:
 
-                st.markdown("---")
+                for doc, score in results:
 
-                st.write(doc)
-
-                st.caption(
-                    f"Similarity: {score:.2f}"
-                )
+                    st.markdown(f"""
+                    <div class="memory-card">
+                        <p>{doc}</p>
+                        <small>
+                        Similarity: {score:.2f}
+                        </small>
+                    </div>
+                    """, unsafe_allow_html=True)
 
     # INSIGHTS
 
-    elif page == "📊 Insights":
+    elif page == "Insights":
 
         st.title("📊 Insights")
 
-        df = pd.read_sql_query(
-            """
-            SELECT *
-            FROM memories
-            WHERE user_id=?
-            """,
-            conn,
-            params=(st.session_state.user_id,)
-        )
+        df = pd.read_sql_query("""
+        SELECT *
+        FROM memories
+        WHERE user_id=?
+        """, conn, params=(st.session_state.user_id,))
 
-        if df.empty:
+        if not df.empty:
 
-            st.info("No data available")
+            col1, col2 = st.columns(2)
 
-        else:
+            with col1:
 
-            emotion_counts = (
-                df["emotion"]
-                .value_counts()
-                .reset_index()
-            )
+                emotion_counts = (
+                    df["emotion"]
+                    .value_counts()
+                    .reset_index()
+                )
 
-            emotion_counts.columns = [
-                "Emotion",
-                "Count"
-            ]
+                emotion_counts.columns = [
+                    "Emotion",
+                    "Count"
+                ]
 
-            fig = px.bar(
-                emotion_counts,
-                x="Emotion",
-                y="Count",
-                title="Mood Trends"
-            )
+                fig = px.bar(
+                    emotion_counts,
+                    x="Emotion",
+                    y="Count"
+                )
 
-            st.plotly_chart(
-                fig,
-                use_container_width=True
-            )
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
+            with col2:
+
+                memory_types = (
+                    df["memory_type"]
+                    .value_counts()
+                    .reset_index()
+                )
+
+                memory_types.columns = [
+                    "Type",
+                    "Count"
+                ]
+
+                fig2 = px.pie(
+                    memory_types,
+                    names="Type",
+                    values="Count"
+                )
+
+                st.plotly_chart(
+                    fig2,
+                    use_container_width=True
+                )
 
     # SETTINGS
 
-    elif page == "⚙️ Settings":
+    elif page == "Settings":
 
         st.title("⚙️ Settings")
 
-        df = pd.read_sql_query(
-            """
-            SELECT *
-            FROM memories
-            WHERE user_id=?
-            """,
-            conn,
-            params=(st.session_state.user_id,)
-        )
-
-        st.subheader("Export Memories")
-
-        st.download_button(
-            "Download JSON",
-            data=df.to_json(orient="records"),
-            file_name="memories.json",
-            mime="application/json"
-        )
+        df = pd.read_sql_query("""
+        SELECT *
+        FROM memories
+        WHERE user_id=?
+        """, conn, params=(st.session_state.user_id,))
 
         st.download_button(
             "Download CSV",
@@ -689,14 +700,25 @@ def main_app():
             mime="text/csv"
         )
 
+        st.download_button(
+            "Download JSON",
+            data=df.to_json(orient="records"),
+            file_name="memories.json",
+            mime="application/json"
+        )
+
 # ====================================
 # MAIN
 # ====================================
 
 if "logged_in" not in st.session_state:
+
     st.session_state.logged_in = False
 
 if st.session_state.logged_in:
+
     main_app()
+
 else:
+
     login_page()
