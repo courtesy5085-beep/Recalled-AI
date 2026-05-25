@@ -15,7 +15,7 @@ class Settings:
     db_path: str = os.getenv("APP_DB_PATH", "recalled.db")
     chroma_path: str = os.getenv("CHROMA_DB_PATH", "chroma_db")
 
-    openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
+    openai_api_key: str | None = os.getenv("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")
     openai_embedding_model: str = os.getenv(
         "OPENAI_EMBEDDING_MODEL",
         "text-embedding-3-small",
